@@ -1,3 +1,5 @@
+# main.py
+import os
 import socket
 import threading
 import json
@@ -39,14 +41,30 @@ def handle_command_client(conn, addr):
                 line, buffer = buffer.split("\n", 1)
                 try:
                     msg = json.loads(line)
-                    if msg.get("cmd") == "move":
+                    cmd = msg.get("cmd")
+                    # Procesar comando move
+                    if cmd == "move":
                         eje = msg["eje"]
                         pasos = msg["pasos"]
                         dir_char = 'f' if msg["dir"] else 'b'
-                        cmd_str = f"move {eje} {pasos} {dir_char}\n"
-                        ser.write(cmd_str.encode())
-                        # Difundir a la pantalla
-                        broadcast(json.dumps(msg))
+                        uart_cmd = f"move {eje} {pasos} {dir_char}\n"
+                    # Procesar comando bomba
+                    elif cmd == "bomba":
+                        state = msg.get("state", "on")
+                        uart_cmd = f"bomba {state}\n"
+                    # Procesar comando solenoide
+                    elif cmd == "solenoide":
+                        state = msg.get("state", "on")
+                        uart_cmd = f"solenoide {state}\n"
+                    else:
+                        print(f"[COMMAND] Comando no soportado: {msg}")
+                        continue
+
+                    # Enviar al Arduino
+                    ser.write(uart_cmd.encode())
+                    # Difundir a clientes de estado
+                    broadcast(json.dumps(msg))
+
                 except json.JSONDecodeError:
                     print(f"[COMMAND] JSON inválido: {line}")
 
@@ -80,9 +98,16 @@ def state_server():
 
 # Lanza display.py como proceso independiente
 def launch_display():
-    proc = subprocess.Popen(["python3", "display.py"])
-    return proc
+    env = os.environ.copy()
+    env["SDL_VIDEODRIVER"] = "fbcon"
+    env["SDL_FBDEV"] = "/dev/fb0"
+    return subprocess.Popen(
+        ["python3", "display.py"],
+        cwd="/home/debian/Beaglebone_Screen_Robot",
+        env=env
+    )
 
+# Punto de entrada
 def main():
     # Lanzar la interfaz de pantalla
     display_proc = launch_display()
