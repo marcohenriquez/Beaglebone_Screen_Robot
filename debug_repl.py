@@ -1,14 +1,47 @@
 #!/usr/bin/env python3
-import socket, json, sys
+import socket
+import json
+import sys
+import threading
 
-HOST = "localhost"
-PORT = 6000
+CMD_HOST = "localhost"
+CMD_PORT = 6000
+STATE_PORT = 6001
 
 def send_cmd(payload):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((HOST, PORT))
+    s.connect((CMD_HOST, CMD_PORT))
     s.sendall((json.dumps(payload) + "\n").encode())
     s.close()
+
+def state_listener():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((CMD_HOST, STATE_PORT))
+    buffer = ""
+    while True:
+        data = sock.recv(1024).decode()
+        if not data:
+            break
+        buffer += data
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            try:
+                msg = json.loads(line)
+                # Muestra ACK, DONE, RAW, etc.
+                if "ack" in msg:
+                    print(f"[ACK] {msg['ack']}")
+                elif "done" in msg:
+                    print(f"[DONE] {msg['done']}")
+                elif "error" in msg:
+                    print(f"[ERROR] {msg['error']}")
+                elif "raw" in msg:
+                    print(f"[RAW ] {msg['raw']}")
+                else:
+                    # Comando original que se difunde
+                    print(f"[STATE] {msg}")
+            except json.JSONDecodeError:
+                print(f"[STATE] no-json: {line}")
+    sock.close()
 
 def parse_and_send(line):
     parts = line.strip().split()
@@ -38,6 +71,9 @@ def parse_and_send(line):
 
 def repl():
     print("Debug REPL. Escribe 'exit' para salir.")
+    # Arranca el listener de estados
+    threading.Thread(target=state_listener, daemon=True).start()
+    # Bucle de entrada de usuario
     while True:
         try:
             line = input("> ")

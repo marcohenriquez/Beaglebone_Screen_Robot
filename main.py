@@ -7,10 +7,11 @@ import serial
 import Adafruit_BBIO.UART as UART
 import subprocess
 import time
+import re
 
 # Configuración UART
 UART.setup("UART4")
-ser = serial.Serial(port="/dev/ttyS4", baudrate=38400, timeout=1)
+ser = serial.Serial(port="/dev/ttyS4", baudrate=38400, timeout=0.1)
 ser.close()
 ser.open()
 
@@ -26,6 +27,23 @@ def broadcast(message):
                 client.sendall((message + "\n").encode())
             except:
                 state_clients.remove(client)
+
+# Hilo que lee ACK/DONE u otras líneas del Arduino
+def serial_reader():
+    pattern = re.compile(r'^(ACK|DONE|ERROR):(.*)$')
+    while True:
+        line = ser.readline().decode('ascii', errors='ignore').strip()
+        if not line:
+            continue
+        m = pattern.match(line)
+        if m:
+            tag, info = m.groups()
+            # Convierte en JSON: {"ack": {...}} o {"done": {...}} o {"error": {...}}
+            msg = {tag.lower(): info}
+            broadcast(json.dumps(msg))
+        else:
+            # línea inesperada: reenviarla como raw
+            broadcast(json.dumps({"raw": line}))
 
 # Maneja conexiones de comandos (puerto 6000)
 def handle_command_client(conn, addr):
@@ -60,9 +78,10 @@ def handle_command_client(conn, addr):
                         print(f"[COMMAND] Comando no soportado: {msg}")
                         continue
 
-                    # Enviar al Arduino
+                    # Enviar al Arduino una sola vez
                     ser.write(uart_cmd.encode())
-                    # Difundir a clientes de estado
+                    ser.flush()
+                    # Difundir el JSON original a clientes de estado
                     broadcast(json.dumps(msg))
 
                 except json.JSONDecodeError:
@@ -107,8 +126,9 @@ def launch_display():
         env=env
     )
 
-# Punto de entrada
 def main():
+    # Iniciar hilo de lectura UART
+    threading.Thread(target=serial_reader, daemon=True).start()
     # Lanzar la interfaz de pantalla
     display_proc = launch_display()
     # Iniciar servidores

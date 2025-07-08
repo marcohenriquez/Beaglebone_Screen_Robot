@@ -10,8 +10,8 @@ pygame.mouse.set_visible(False)
 
 # Mapas de caras por movimiento
 faces = {
-    'base_left': 'Cara neutral.bmp',
-    'base_right': 'Cara neutral.bmp',
+    'base_left': 'Cara izquierda.bmp',
+    'base_right': 'Cara derecha.bmp',
     'seg1_up': 'Cara arriba.bmp',
     'seg1_down': 'Cara abajo.bmp',
     'seg2_up': 'Cara arriba.bmp',

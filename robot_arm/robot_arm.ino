@@ -25,9 +25,10 @@ const int pinSolenoide = 46;
 #define ENABLE_INACTIVE HIGH
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(38400);
+  while(!Serial);  // Espera a que el USB-Serial esté listo
 
-  // Pines motores
+  // Configuración de pines motores
   pinMode(stepPin1, OUTPUT);
   pinMode(dirPin1, OUTPUT);
   pinMode(enablePin1, OUTPUT);
@@ -43,75 +44,78 @@ void setup() {
   pinMode(enablePin3, OUTPUT);
   digitalWrite(enablePin3, ENABLE_INACTIVE);
 
-  // Bomba y solenoide
+  // Inicializa bomba y solenoide
   bomba.attach(pinBomba);
   solenoide.attach(pinSolenoide);
   bomba.write(0);
   solenoide.write(0);
 
-  Serial.println("🔧 Sistema listo. Enviar comandos.");
+  // ACK de que el sistema está listo
+  Serial.println("ACK:ready");
 }
 
 void loop() {
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
-    processCommand(command);
-  }
-}
+    command.trim();
 
-void processCommand(String command) {
-  if (command.startsWith("move")) {
-    int motor = command.substring(5, 6).toInt();
-    int steps = command.substring(7, command.indexOf(' ', 7)).toInt();
-    char dir = command.charAt(command.length() - 1);
+    // Envío de ACK de recepción
+    Serial.print("ACK:");
+    Serial.println(command);
 
-    switch (motor) {
-      case 1:
-        moveMotor(stepPin1, dirPin1, enablePin1, dir, steps);
-        break;
-      case 2:
-        moveMotor(stepPin2, dirPin2, enablePin2, dir, steps);
-        break;
-      case 3:
-        moveMotor(stepPin3, dirPin3, enablePin3, dir, steps);
-        break;
-      default:
-        Serial.println("⚠️ Motor inválido. Usa 1, 2 o 3.");
+    // Procesar comando
+    if (command.startsWith("move")) {
+      int motor = command.substring(5, 6).toInt();
+      int steps = command.substring(7, command.indexOf(' ', 7)).toInt();
+      char dir = command.charAt(command.length() - 1);
+
+      switch (motor) {
+        case 1:
+          moveMotor(stepPin1, dirPin1, enablePin1, dir, steps);
+          break;
+        case 2:
+          moveMotor(stepPin2, dirPin2, enablePin2, dir, steps);
+          break;
+        case 3:
+          moveMotor(stepPin3, dirPin3, enablePin3, dir, steps);
+          break;
+        default:
+          Serial.println("ERROR:InvalidMotor");
+      }
     }
-  }
-  else if (command == "bomba on") {
-    bomba.write(180);
-    Serial.println("🟢 Bomba activada.");
-  }
-  else if (command == "bomba off") {
-    bomba.write(0);
-    Serial.println("🔴 Bomba desactivada.");
-  }
-  else if (command == "solenoide on") {
-    solenoide.write(180);
-    Serial.println("🟢 Solenoide activado.");
-  }
-  else if (command == "solenoide off") {
-    solenoide.write(0);
-    Serial.println("🔴 Solenoide desactivado.");
-  }
-  else {
-    Serial.println("⚠️ Comando no reconocido.");
+    else if (command == "bomba on") {
+      bomba.write(180);
+    }
+    else if (command == "bomba off") {
+      bomba.write(0);
+    }
+    else if (command == "solenoide on") {
+      solenoide.write(180);
+    }
+    else if (command == "solenoide off") {
+      solenoide.write(0);
+    }
+    else {
+      Serial.println("ERROR:UnknownCommand");
+    }
+
+    // Envío de DONE al terminar
+    Serial.print("DONE:");
+    Serial.println(command);
   }
 }
 
 void moveMotor(int stepPin, int dirPin, int enablePin, char dir, int steps) {
-  digitalWrite(enablePin, ENABLE_ACTIVE);  // Activar
+  digitalWrite(enablePin, ENABLE_ACTIVE);
 
+  // Definición de dirección
   if (dir == 'f') {
     digitalWrite(dirPin, HIGH);
-  } else if (dir == 'b') {
-    digitalWrite(dirPin, LOW);
   } else {
-    Serial.println("⚠️ Dirección inválida. Usa 'f' o 'b'.");
-    return;
+    digitalWrite(dirPin, LOW);
   }
 
+  // Generar pulsos
   for (int i = 0; i < steps; i++) {
     digitalWrite(stepPin, HIGH);
     delayMicroseconds(800);
@@ -119,6 +123,5 @@ void moveMotor(int stepPin, int dirPin, int enablePin, char dir, int steps) {
     delayMicroseconds(800);
   }
 
-  // No se libera el motor
-  Serial.println("✅ Movimiento completado.");
+  // El motor queda bloqueado (ENABLE activo)
 }
