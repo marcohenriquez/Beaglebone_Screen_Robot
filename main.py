@@ -32,7 +32,7 @@ def broadcast(message):
                 state_clients.remove(c)
 
 def serial_reader():
-    """Lee la UART continuamente y retransmite ACK/DONE/ERROR o RAW."""
+    """Lee la UART continuamente y retransmite ACK/DONE/ERROR o RAW por el canal de estados."""
     buffer = ""
     while True:
         chunk = ser.read(ser.in_waiting or 1).decode('ascii', errors='ignore')
@@ -54,8 +54,9 @@ def serial_reader():
             broadcast(json.dumps(msg))
 
 def handle_command_client(conn, addr):
-    buffer = ""
+    """Recibe JSON por socket, traduce a UART y difunde el JSON."""
     print(f"[COMMAND] Conexión desde {addr}")
+    buffer = ""
     with conn:
         while True:
             data = conn.recv(1024).decode()
@@ -86,11 +87,11 @@ def handle_command_client(conn, addr):
                     print(f"[COMMAND] Comando no soportado: {msg}")
                     continue
 
-                # Envía una sola vez por UART
+                # Enviar al Arduino una sola vez
                 ser.write(uart_cmd.encode())
                 ser.flush()
 
-                # Difunde el JSON original a clientes de estado
+                # Difundir el JSON original a clientes de estado
                 broadcast(json.dumps(msg))
 
 def command_server():
@@ -129,11 +130,11 @@ def launch_display():
     )
 
 def main():
-    # 1) Hilo que procesa serial entrante (ACK/DONE/ERROR/RAW)
+    # 1) Inicia hilo para lectura de UART (ACK/DONE/ERROR/RAW)
     threading.Thread(target=serial_reader, daemon=True).start()
-    # 2) Lanza la GUI
+    # 2) Lanza la interfaz de pantalla
     display_proc = launch_display()
-    # 3) Arranca sockets de comando y estado
+    # 3) Arranca los servidores de comando y estado
     threading.Thread(target=command_server, daemon=True).start()
     threading.Thread(target=state_server, daemon=True).start()
     print("[MAIN] Servidor corriendo. Ctrl+C para salir.")
