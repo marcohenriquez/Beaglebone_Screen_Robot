@@ -32,26 +32,18 @@ def broadcast(message):
                 state_clients.remove(c)
 
 def serial_reader():
-    """Lee la UART continuamente y retransmite ACK/DONE/ERROR o RAW por el canal de estados."""
-    buffer = ""
+    """Lee líneas completas (ACK/DONE/ERROR o raw) y las difunde."""
     while True:
-        chunk = ser.read(ser.in_waiting or 1).decode('ascii', errors='ignore')
-        if not chunk:
-            time.sleep(0.01)
+        line = ser.readline().decode('ascii', errors='ignore').strip()
+        if not line:
             continue
-        buffer += chunk
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            line = line.strip()
-            if not line:
-                continue
-            m = pattern.match(line)
-            if m:
-                tag, info = m.groups()
-                msg = { tag.lower(): info }
-            else:
-                msg = { "raw": line }
-            broadcast(json.dumps(msg))
+        m = pattern.match(line)
+        if m:
+            tag, info = m.groups()
+            msg = {tag.lower(): info}
+        else:
+            msg = {"raw": line}
+        broadcast(json.dumps(msg))
 
 def handle_command_client(conn, addr):
     """Recibe JSON por socket, traduce a UART y difunde el JSON."""
@@ -88,6 +80,11 @@ def handle_command_client(conn, addr):
                     continue
 
                 # Enviar al Arduino una sola vez
+                # justo antes de ser.write(uart_cmd)
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+                ser.write(uart_cmd.encode())
+                ser.flush()
                 ser.write(uart_cmd.encode())
                 ser.flush()
 
