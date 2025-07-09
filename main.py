@@ -32,18 +32,19 @@ def broadcast(message):
                 state_clients.remove(c)
 
 def serial_reader():
-    """Lee líneas completas (ACK/DONE/ERROR o raw) y las difunde."""
+    """Lee un byte a la vez y difunde {"ack":true} o {"done":true}."""
     while True:
-        line = ser.readline().decode('ascii', errors='ignore').strip()
-        if not line:
+        b = ser.read(1)  # bloquea timeout o un byte
+        if not b:
             continue
-        m = pattern.match(line)
-        if m:
-            tag, info = m.groups()
-            msg = {tag.lower(): info}
-        else:
-            msg = {"raw": line}
-        broadcast(json.dumps(msg))
+        if b == b'A':
+            broadcast(json.dumps({"ack": True}))
+        elif b == b'D':
+            broadcast(json.dumps({"done": True}))
+        elif b == b'E':
+            broadcast(json.dumps({"error": True}))
+        # si lees otros bytes, puedes ignorarlos o difundir {"raw":b.hex()}
+
 
 def handle_command_client(conn, addr):
     """Recibe JSON por socket, traduce a UART y difunde el JSON."""
