@@ -14,6 +14,12 @@ ser = serial.Serial(port="/dev/ttyS4", baudrate=38400, timeout=1)
 ser.close()
 ser.open()
 
+# ↓ Esperamos a que el hardware estabilice y descartamos basura inicial
+time.sleep(0.1)
+ser.reset_input_buffer()
+ser.reset_output_buffer()
+
+
 # — Gestión de clientes de estado —
 state_clients = []
 state_lock    = threading.Lock()
