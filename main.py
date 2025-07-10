@@ -1,4 +1,4 @@
-# main.py
+#!/usr/bin/env python3
 import os
 import socket
 import threading
@@ -7,19 +7,17 @@ import serial
 import Adafruit_BBIO.UART as UART
 import subprocess
 import time
-import re
 
-# Configuración UART
+# — UART4 en P9_11/P9_13 —
 UART.setup("UART4")
-ser = serial.Serial(port="/dev/ttyS4", baudrate=38400, timeout=0.1)
+ser = serial.Serial(port="/dev/ttyS4", baudrate=38400, timeout=1)
 ser.close()
 ser.open()
 
-# Lista de clientes suscritos a estados
+# — Gestión de clientes de estado —
 state_clients = []
-state_lock = threading.Lock()
+state_lock    = threading.Lock()
 
-# Función para difundir mensajes a clientes
 def broadcast(message):
     with state_lock:
         for client in state_clients[:]:
@@ -28,24 +26,7 @@ def broadcast(message):
             except:
                 state_clients.remove(client)
 
-# Hilo que lee ACK/DONE u otras líneas del Arduino
-def serial_reader():
-    pattern = re.compile(r'^(ACK|DONE|ERROR):(.*)$')
-    while True:
-        line = ser.readline().decode('ascii', errors='ignore').strip()
-        if not line:
-            continue
-        m = pattern.match(line)
-        if m:
-            tag, info = m.groups()
-            # Convierte en JSON: {"ack": {...}} o {"done": {...}} o {"error": {...}}
-            msg = {tag.lower(): info}
-            broadcast(json.dumps(msg))
-        else:
-            # línea inesperada: reenviarla como raw
-            broadcast(json.dumps({"raw": line}))
-
-# Maneja conexiones de comandos (puerto 6000)
+# — Manejo de comandos (puerto 6000) —
 def handle_command_client(conn, addr):
     print(f"[COMMAND] Conexión desde {addr}")
     buffer = ""
@@ -59,37 +40,31 @@ def handle_command_client(conn, addr):
                 line, buffer = buffer.split("\n", 1)
                 try:
                     msg = json.loads(line)
-                    cmd = msg.get("cmd")
-                    # Procesar comando move
-                    if cmd == "move":
-                        eje = msg["eje"]
-                        pasos = msg["pasos"]
-                        dir_char = 'f' if msg["dir"] else 'b'
-                        uart_cmd = f"move {eje} {pasos} {dir_char}\n"
-                    # Procesar comando bomba
-                    elif cmd == "bomba":
-                        state = msg.get("state", "on")
-                        uart_cmd = f"bomba {state}\n"
-                    # Procesar comando solenoide
-                    elif cmd == "solenoide":
-                        state = msg.get("state", "on")
-                        uart_cmd = f"solenoide {state}\n"
-                    else:
-                        print(f"[COMMAND] Comando no soportado: {msg}")
-                        continue
-
-                    # Enviar al Arduino una sola vez
-                    ser.write(uart_cmd.encode())
-                    ser.flush()
-                    # Difundir el JSON original a clientes de estado
-                    broadcast(json.dumps(msg))
-
                 except json.JSONDecodeError:
-                    print(f"[COMMAND] JSON inválido: {line}")
+                    continue
 
-# Servidor de comandos
+                # Solo “move” por ahora
+                if msg.get("cmd") != "move":
+                    continue
+                eje  = msg["eje"]
+                pasos= msg["pasos"]
+                dir_char = 'f' if msg["dir"] else 'b'
+                uart_cmd = f"move {eje} {pasos} {dir_char}\n"
+
+                # ← Limpia buffers para no arrastrar datos viejos
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+
+                # ← Envía UNA SOLA VEZ
+                ser.write(uart_cmd.encode())
+                ser.flush()
+
+                # ← Difunde el JSON original
+                broadcast(json.dumps(msg))
+
+# — Servidor de comandos —
 def command_server():
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", 6000))
     srv.listen()
@@ -98,15 +73,14 @@ def command_server():
         conn, addr = srv.accept()
         threading.Thread(target=handle_command_client, args=(conn, addr), daemon=True).start()
 
-# Maneja suscripciones de pantalla/debug al puerto de estados (6001)
+# — Manejo de suscripciones de estado (puerto 6001) —
 def handle_state_client(conn, addr):
     print(f"[STATE] Cliente suscrito desde {addr}")
     with state_lock:
         state_clients.append(conn)
 
-# Servidor de estados
 def state_server():
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", 6001))
     srv.listen()
@@ -115,31 +89,27 @@ def state_server():
         conn, addr = srv.accept()
         threading.Thread(target=handle_state_client, args=(conn, addr), daemon=True).start()
 
-# Lanza display.py como proceso independiente
+# — Lanza display.py en framebuffer —
 def launch_display():
     env = os.environ.copy()
     env["SDL_VIDEODRIVER"] = "fbcon"
-    env["SDL_FBDEV"] = "/dev/fb0"
+    env["SDL_FBDEV"]       = "/dev/fb0"
     return subprocess.Popen(
         ["python3", "display.py"],
-        cwd="/home/debian/Beaglebone_Screen_Robot",
+        cwd=os.path.dirname(__file__),
         env=env
     )
 
 def main():
-    # Iniciar hilo de lectura UART
-    threading.Thread(target=serial_reader, daemon=True).start()
-    # Lanzar la interfaz de pantalla
-    display_proc = launch_display()
-    # Iniciar servidores
+    #display_proc = launch_display()
     threading.Thread(target=command_server, daemon=True).start()
-    threading.Thread(target=state_server, daemon=True).start()
+    threading.Thread(target=state_server,   daemon=True).start()
     print("[MAIN] Servidor corriendo. Ctrl+C para salir.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("[MAIN] Terminando...")
+        pass
     finally:
         ser.close()
         display_proc.terminate()

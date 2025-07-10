@@ -1,1 +1,5 @@
 pyserial
+pygame
+socket
+threading
+time
