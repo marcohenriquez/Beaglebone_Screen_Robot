@@ -49,24 +49,33 @@ def handle_command_client(conn, addr):
                 except json.JSONDecodeError:
                     continue
 
-                # Solo “move” por ahora
-                if msg.get("cmd") != "move":
-                    continue
-                eje  = msg["eje"]
-                pasos= msg["pasos"]
-                dir_char = 'f' if msg["dir"] else 'b'
-                uart_cmd = f"move {eje} {pasos} {dir_char}\n"
+                               # tras parsear JSON en msg…
+                uart_cmd = None
+                if msg["cmd"] == "move":
+                    eje = msg["eje"]
+                    dir_char = 'f' if msg["dir"] else 'b'
+                    pasos = msg["pasos"]
+                    uart_cmd = f"move {eje} {pasos} {dir_char}\n"
 
-                # ← Limpia buffers para no arrastrar datos viejos
-                ser.reset_input_buffer()
-                ser.reset_output_buffer()
+                elif msg["cmd"] == "bomba":
+                    uart_cmd = f"bomba {msg['state']}\n"
 
-                # ← Envía UNA SOLA VEZ
-                ser.write(uart_cmd.encode())
-                ser.flush()
+                elif msg["cmd"] == "solenoide":
+                    uart_cmd = f"solenoide {msg['state']}\n"
 
-                # ← Difunde el JSON original
-                broadcast(json.dumps(msg))
+                elif msg["cmd"] == "efector":
+                    uart_cmd = f"efector {msg['action']}\n"
+
+                elif msg["cmd"] == "rotarEfector":
+                    uart_cmd = f"rotarEfector {msg['angle']}\n"
+
+                if uart_cmd:
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
+                    ser.write(uart_cmd.encode())
+                    ser.flush()
+                    broadcast(json.dumps(msg))
+
 
 # — Servidor de comandos —
 def command_server():
