@@ -244,7 +244,6 @@ def handle_command_client(conn, addr):
                         if axis not in (1,2,3):
                             print(f"[PBD] recstart eje inválido: {axis}")
                             continue
-                        global pbd_is_recording, pbd_record_axis
                         pbd_is_recording = True
                         pbd_record_axis  = axis
                         pbd_traj[axis].clear()
@@ -255,7 +254,6 @@ def handle_command_client(conn, addr):
                         continue
 
                     if action == "recstop":
-                        global pbd_is_recording
                         pbd_is_recording = False
                         print(f"[PBD] REC STOP eje {pbd_record_axis} - {len(pbd_traj.get(pbd_record_axis, []))} muestras")
                         send_uart("record stop")
@@ -302,6 +300,7 @@ def handle_command_client(conn, addr):
                 if uart_cmd:
                     send_uart(uart_cmd)
                     broadcast(json.dumps(msg))
+
 
 def command_server():
     srv = socket.socket()
