@@ -148,25 +148,29 @@ try:
         now = time.time()
 
         with change_lock:
-            # Revertir a neutral tras 2 segundos desde el último cambio por movimiento
+            # (1) Si hay un blink activo y ya venció, terminarlo SIEMPRE,
+            #     independientemente de la imagen actual.
+            if blink_active and now >= blink_end_time:
+                finish_blink()
+
+            # (2) Volver a neutral tras 2 s desde el último cambio por movimiento.
             if (current_image is not neutral_image and
                 current_image is not blink_image and
                 (now - last_change) >= 2.0):
                 current_image = neutral_image
 
-            # Gestionar parpadeo solo si estamos en neutral y no hay cambio reciente
-            # (no usamos last_change para el timing del blink; solo exigimos imagen neutral)
-            if current_image is neutral_image:
-                # ¿Podemos iniciar un blink?
-                if not blink_active and now >= blink_next_time:
-                    try_start_blink(now)
-                # ¿Termina el blink activo?
-                elif blink_active and now >= blink_end_time:
-                    finish_blink()
-            else:
-                # Si no estamos en neutral (imagen de movimiento o blink), asegúrate de no iniciar blink
-                if blink_active and current_image is not blink_image:
-                    # Caso borde: se cambió a otra imagen durante el blink
+            # (3) Si estamos en neutral y no hay blink activo, ¿toca iniciar uno?
+            if (current_image is neutral_image and
+                not blink_active and
+                now >= blink_next_time):
+                try_start_blink(now)
+
+            # (4) Si estamos en imagen de movimiento, aplaza el próximo blink para que
+            #     no intentemos iniciarlo durante la animación de movimiento.
+            if current_image is not neutral_image and current_image is not blink_image:
+                blink_next_time = now + BLINK_INTERVAL
+                # Caso borde: si, por alguna razón, hay blink activo y hemos cambiado a movimiento.
+                if blink_active:
                     cancel_blink(now)
 
         # Dibujar
