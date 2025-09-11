@@ -6,6 +6,11 @@ import threading
 import time
 import Adafruit_BBIO.GPIO as GPIO
 
+# ===== Config “blink” =====
+BLINK_INTERVAL = 2.0   # cada cuánto parpadea en reposo (s)
+BLINK_DURATION = 0.12  # duración del parpadeo (s)
+BLINK_DEBUG   = False  # prints opcionales
+
 # Pines y constantes
 BUZZER_PIN = "P8_11"    # GPIO1_13, buzzer low-side
 # LOW  → buzzer ON
@@ -41,16 +46,53 @@ images = {k: pygame.transform.scale(pygame.image.load(p), (800, 480))
           for k, p in face_paths.items()}
 neutral_image = pygame.transform.scale(pygame.image.load('Cara neutral.bmp'), (800, 480))
 
+# Imagen de parpadeo
+blink_image = pygame.transform.scale(pygame.image.load('blink.bmp'), (800, 480))
+
 # Estado compartido
 going = True
 current_image = neutral_image
 last_change = time.time()
 change_lock = threading.Lock()
 
+# Temporizadores para blink
+blink_next_time = time.time() + BLINK_INTERVAL  # cuándo debe iniciar el próximo parpadeo
+blink_end_time  = 0.0                           # fin del parpadeo en curso (0 => no hay parpadeo activo)
+blink_active    = False
+
 # Conectar al servidor de estados
 debug_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 debug_sock.connect(("localhost", 6001))
 buffer = ""
+
+def cancel_blink(now=None):
+    """Cancela un blink activo y programa el próximo."""
+    global blink_end_time, blink_active, blink_next_time
+    t = time.time() if now is None else now
+    blink_end_time = 0.0
+    blink_active   = False
+    blink_next_time = t + BLINK_INTERVAL
+
+def try_start_blink(now):
+    """Intenta iniciar blink si estamos en neutral y no hay cambio en curso."""
+    global blink_end_time, blink_active, current_image
+    if current_image is not neutral_image:
+        return
+    blink_end_time = now + BLINK_DURATION
+    blink_active   = True
+    current_image  = blink_image
+    if BLINK_DEBUG:
+        print("[BLINK] start")
+
+def finish_blink():
+    """Termina blink y vuelve a neutral."""
+    global blink_end_time, blink_active, current_image, blink_next_time
+    blink_end_time = 0.0
+    blink_active   = False
+    current_image  = neutral_image
+    blink_next_time = time.time() + BLINK_INTERVAL
+    if BLINK_DEBUG:
+        print("[BLINK] end")
 
 def recv_states():
     """Lee mensajes JSON y actualiza la imagen + emite beep."""
@@ -77,10 +119,14 @@ def recv_states():
                         key = None
 
                     if key and key in images:
+                        now = time.time()
                         with change_lock:
+                            # Si hay blink activo, cancélalo
+                            cancel_blink(now)
+                            # Cambia a imagen de movimiento
                             current_image = images[key]
-                            last_change = time.time()
-                        # Lanza el beep en un hilo para no bloquear recv_states
+                            last_change = now
+                        # Beep no bloqueante
                         threading.Thread(target=beep, daemon=True).start()
 
             except json.JSONDecodeError:
@@ -99,16 +145,34 @@ try:
                 # Esc o Enter cierran la aplicación
                 going = False
 
-        # Revertir a neutral tras 2 segundos
+        now = time.time()
+
         with change_lock:
-            if (current_image != neutral_image and
-                (time.time() - last_change) >= 2.0):
+            # Revertir a neutral tras 2 segundos desde el último cambio por movimiento
+            if (current_image is not neutral_image and
+                current_image is not blink_image and
+                (now - last_change) >= 2.0):
                 current_image = neutral_image
+
+            # Gestionar parpadeo solo si estamos en neutral y no hay cambio reciente
+            # (no usamos last_change para el timing del blink; solo exigimos imagen neutral)
+            if current_image is neutral_image:
+                # ¿Podemos iniciar un blink?
+                if not blink_active and now >= blink_next_time:
+                    try_start_blink(now)
+                # ¿Termina el blink activo?
+                elif blink_active and now >= blink_end_time:
+                    finish_blink()
+            else:
+                # Si no estamos en neutral (imagen de movimiento o blink), asegúrate de no iniciar blink
+                if blink_active and current_image is not blink_image:
+                    # Caso borde: se cambió a otra imagen durante el blink
+                    cancel_blink(now)
 
         # Dibujar
         screen.blit(current_image, (0, 0))
         pygame.display.flip()
-        pygame.time.delay(100)
+        pygame.time.delay(50)   # 20 FPS para animación suave de blink
 
 finally:
     # Al cerrar, apagar buzzer y liberar recursos

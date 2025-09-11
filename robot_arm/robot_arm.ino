@@ -1,4 +1,4 @@
-#include <Arduino.h>
+#include <Arduino.h>pbd play_all
 #include <limits.h>          // Para LONG_MIN como indicador de error
 #include <Servo.h>
 #include <Adafruit_NeoPixel.h>
