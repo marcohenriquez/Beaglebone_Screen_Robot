@@ -186,6 +186,7 @@ def play_axes_seq(axes, reverse: bool = False):
 #  Servidores TCP (comandos/estado)
 # ==================================
 def handle_command_client(conn, addr):
+    global pbd_is_recording, pbd_record_axis
     print(f"[COMMAND] Conexión desde {addr}")
     buffer = ""
     with conn:
